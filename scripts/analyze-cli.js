@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Uso: npm run analyze -- <carpeta> [--json] [--scope @miorg]
+// Uso: npm run analyze -- <carpeta> [--online] [--json] [--scope @miorg]
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, basename, resolve } from 'node:path'
 import { analyzeProject } from '../src/analyzer/index.js'
 import { toMarkdown } from '../src/analyzer/report.js'
+import { runOnlineCheck } from '../src/analyzer/online.js'
 import { IGNORED_DIRS, shouldReadFile } from '../src/analyzer/files.js'
 
 export function loadFromDisk(root) {
@@ -33,13 +34,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2)
   const dir = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--scope')
   if (!dir) {
-    console.error('Uso: npm run analyze -- <carpeta-del-proyecto> [--json] [--scope @miorg]')
+    console.error('Uso: npm run analyze -- <carpeta-del-proyecto> [--online] [--json] [--scope @miorg]')
     process.exit(1)
   }
   const root = resolve(dir)
   const scopeIdx = args.indexOf('--scope')
   const ownScopes = scopeIdx >= 0 ? args[scopeIdx + 1].split(',') : []
   const { files, skipped } = loadFromDisk(root)
-  const report = analyzeProject(files, { projectName: basename(root), skipped, ownScopes })
+  const options = { projectName: basename(root), skipped, ownScopes }
+  let report = analyzeProject(files, options)
+  if (args.includes('--online')) {
+    const online = await runOnlineCheck(report.dependencies.libraries)
+    if (online.vulnCheck.status === 'error') console.error(`Aviso: no se pudo consultar online (${online.vulnCheck.error}); se usa la base offline.`)
+    report = analyzeProject(files, { ...options, ...online })
+  }
   console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : toMarkdown(report))
 }

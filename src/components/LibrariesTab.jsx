@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
-import { Badge, Bars, Card, Empty, FileList, Stat } from './ui.jsx'
+import { AdvisoryList, Badge, Bars, Card, Empty, FileList, Stat, VulnSourceNote } from './ui.jsx'
 
 const TYPE_LABELS = {
   dependencies: 'prod',
@@ -9,7 +9,7 @@ const TYPE_LABELS = {
   workspace: 'workspace',
 }
 
-export default function LibrariesTab({ deps }) {
+export default function LibrariesTab({ deps, vulnCheck }) {
   const [q, setQ] = useState('')
   const [owner, setOwner] = useState('all')
   const [type, setType] = useState('all')
@@ -28,6 +28,7 @@ export default function LibrariesTab({ deps }) {
 
   return (
     <div className="stack">
+      <VulnSourceNote vulnCheck={vulnCheck} />
       <div className="grid-4">
         <div className="card"><Stat label="Declaradas" value={t.declared} hint={`${t.dependencies} prod · ${t.devDependencies} dev`} /></div>
         <div className="card"><Stat label="Ajenas / Propias" value={`${t.external} / ${t.own}`} hint="terceros vs. propias del proyecto u org" /></div>
@@ -108,7 +109,12 @@ export default function LibrariesTab({ deps }) {
                     <td>{l.isAI ? <Badge tone="info">IA</Badge> : null} {l.categoryLabel}</td>
                     <td className="num">{l.importCount}</td>
                     <td className="status-cell">
-                      {l.vulnerabilities.length > 0 && <Badge tone="bad">{l.vulnerabilities.length} CVE</Badge>}
+                      {l.vulnerabilities.length > 0 && (
+                        <Badge tone={l.vulnerabilities.some((v) => v.severity === 'critical') ? 'critical' : 'bad'}>
+                          {l.vulnerabilities.length} vuln.
+                        </Badge>
+                      )}
+                      {l.vulnSource === 'online' && !l.vulnerabilities.length && <Badge tone="good" title="Sin vulnerabilidades conocidas según la GitHub Advisory Database">✓ segura</Badge>}
                       {l.deprecated && <Badge tone="warn" title={l.deprecated}>deprecada</Badge>}
                       {l.possiblyUnused && <Badge tone="low" title="No se encontraron imports ni referencias en configs">¿sin uso?</Badge>}
                       {l.clientFiles.length > 0 && <Badge tone="neutral" title="Se importa en componentes 'use client'">cliente</Badge>}
@@ -128,11 +134,14 @@ export default function LibrariesTab({ deps }) {
                                 Rango declarado <code>{l.spec}</code>; versión {l.versionSource === 'lockfile' ? 'instalada según lockfile' : 'mínima del rango'}.
                               </p>
                             )}
-                            {l.vulnerabilities.map((v) => (
-                              <div key={v.id} className="alert bad small">
-                                <strong>{v.id}</strong> — {v.title}. {v.fix}
-                              </div>
-                            ))}
+                            {l.vulnerabilities.length > 0 && (
+                              <>
+                                <h4>
+                                  Vulnerabilidades ({l.vulnerabilities.length}) · {l.vulnSource === 'online' ? 'GitHub Advisory Database' : 'base offline'}
+                                </h4>
+                                <AdvisoryList advisories={[...l.vulnerabilities].sort((a, b) => ['critical', 'high', 'medium', 'low'].indexOf(a.severity) - ['critical', 'high', 'medium', 'low'].indexOf(b.severity))} />
+                              </>
+                            )}
                             {l.deprecated && <div className="alert warn small">{l.deprecated}</div>}
                           </div>
                           <div>

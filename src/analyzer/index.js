@@ -14,7 +14,7 @@ export { SEVERITIES, SEVERITY_LABELS } from './security.js'
 export function analyzeProject(files, options = {}) {
   const started = Date.now()
   const aliases = extractPathAliases(files)
-  const dependencies = analyzeDependencies(files, { ownScopes: options.ownScopes ?? [], aliases })
+  const dependencies = analyzeDependencies(files, { ownScopes: options.ownScopes ?? [], aliases, onlineAdvisories: options.onlineAdvisories ?? null })
   const usage = analyzeUsage(files, dependencies)
   const ai = analyzeAI(files, dependencies)
   const security = analyzeSecurity(files, dependencies, usage)
@@ -29,6 +29,7 @@ export function analyzeProject(files, options = {}) {
       filesAnalyzed: files.length,
       filesSkipped: options.skipped ?? 0,
       aliases,
+      vulnCheck: options.vulnCheck ?? { mode: 'offline' },
     },
     dependencies,
     usage,
@@ -56,7 +57,11 @@ function buildHighlights({ dependencies, usage, ai, security }) {
         ? `Sin hallazgos críticos; ${security.counts.medium} de severidad media.`
         : 'Sin hallazgos de seguridad relevantes.',
   })
-  if (dependencies.totals.vulnerable) h.push({ tone: 'bad', text: `${dependencies.totals.vulnerable} dependencia(s) directa(s) con vulnerabilidades conocidas.` })
+  if (dependencies.totals.vulnerable) {
+    const n = dependencies.libraries.reduce((a, l) => a + l.vulnerabilities.length, 0)
+    const online = dependencies.libraries.some((l) => l.vulnSource === 'online')
+    h.push({ tone: 'bad', text: `${dependencies.totals.vulnerable} dependencia(s) directa(s) con ${n} vulnerabilidad(es) conocida(s)${online ? ' según la GitHub Advisory Database' : ''}.` })
+  }
   if (dependencies.undeclared.length) h.push({ tone: 'warn', text: `${dependencies.undeclared.length} paquete(s) importado(s) pero no declarado(s) en package.json.` })
   if (dependencies.totals.possiblyUnused) h.push({ tone: 'warn', text: `${dependencies.totals.possiblyUnused} dependencia(s) posiblemente sin uso.` })
   if (!usage.totals.testFiles) h.push({ tone: 'warn', text: 'No se encontraron archivos de tests.' })

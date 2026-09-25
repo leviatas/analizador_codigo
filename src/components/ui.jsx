@@ -78,3 +78,54 @@ export function Empty({ children }) {
 }
 
 export const SEVERITY_TONE = { critical: 'critical', high: 'bad', medium: 'warn', low: 'low', info: 'neutral' }
+
+const SEV_SHORT = { critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja', info: 'Info' }
+
+/** Lista de avisos de seguridad con enlace a la fuente. */
+export function AdvisoryList({ advisories }) {
+  return (
+    <ul className="adv-list">
+      {advisories.map((a) => (
+        <li key={a.id}>
+          <Badge tone={SEVERITY_TONE[a.severity]}>{SEV_SHORT[a.severity]}</Badge>
+          <span className="adv-title">
+            {a.url ? (
+              <a href={a.url} target="_blank" rel="noopener noreferrer" className="mono">{a.id}</a>
+            ) : (
+              <span className="mono">{a.id}</span>
+            )}{' '}
+            {a.title}
+            {a.score ? <span className="muted"> · CVSS {a.score}</span> : null}
+          </span>
+          <span className="adv-fix muted small">{a.fixVersion ? `corregido en ${a.fixVersion}` : 'sin parche'}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Indica de dónde salieron los datos de vulnerabilidades. */
+export function VulnSourceNote({ vulnCheck }) {
+  const vc = vulnCheck ?? { mode: 'offline' }
+  if (vc.status === 'ok') {
+    return (
+      <div className="source-note good">
+        <strong>Vulnerabilidades verificadas online</strong> en la{' '}
+        <a href="https://github.com/advisories" target="_blank" rel="noopener noreferrer">GitHub Advisory Database</a> para {vc.packages} librería(s) ·{' '}
+        {new Date(vc.checkedAt).toLocaleString('es-AR')}
+      </div>
+    )
+  }
+  if (vc.status === 'error') {
+    return (
+      <div className="source-note warn">
+        <strong>No se pudo consultar online</strong> ({vc.error}). Se usó la base offline incluida, que sólo cubre los casos más conocidos.
+      </div>
+    )
+  }
+  return (
+    <div className="source-note">
+      Vulnerabilidades según la base offline incluida (consulta online desactivada).
+    </div>
+  )
+}

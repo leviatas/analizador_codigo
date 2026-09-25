@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { SEVERITIES, SEVERITY_LABELS } from '../analyzer/security.js'
-import { Badge, Card, Empty, SEVERITY_TONE } from './ui.jsx'
+import { AdvisoryList, Badge, Card, Empty, SEVERITY_TONE, VulnSourceNote } from './ui.jsx'
 
-export default function SecurityTab({ security }) {
+export default function SecurityTab({ security, vulnCheck }) {
   const [active, setActive] = useState(() => new Set(SEVERITIES.filter((s) => s !== 'info')))
   const [q, setQ] = useState('')
   const toggle = (s) => {
@@ -33,8 +33,9 @@ export default function SecurityTab({ security }) {
         </div>
       </div>
       <p className="muted small">
-        Análisis estático por reglas: puede haber falsos positivos y no reemplaza a <code>npm audit</code> ni a una auditoría manual. La base de CVEs es offline y cubre los casos más notorios.
+        Análisis estático por reglas: puede haber falsos positivos y no reemplaza a una auditoría manual.
       </p>
+      <VulnSourceNote vulnCheck={vulnCheck} />
 
       {list.length ? (
         <div className="findings">
@@ -50,6 +51,15 @@ export default function SecurityTab({ security }) {
                 {f.line ? `:${f.line}` : ''}
               </div>
               {f.snippet && <code className="snippet block">{f.snippet}</code>}
+              {f.advisories?.length > 1 && (
+                <details className="adv-details">
+                  <summary>Ver las {f.advisories.length} vulnerabilidades</summary>
+                  <AdvisoryList advisories={f.advisories} />
+                </details>
+              )}
+              {f.advisories?.length === 1 && f.advisories[0].url && (
+                <a className="small" href={f.advisories[0].url} target="_blank" rel="noopener noreferrer">Ver aviso {f.advisories[0].id} ↗</a>
+              )}
             </article>
           ))}
         </div>

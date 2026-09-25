@@ -9,6 +9,14 @@ Aplicación **React + Vite** que analiza un proyecto React o Next.js a partir de
 
 **No usa IA para analizar**: todo es análisis estático con reglas, expresiones regulares y una base de conocimiento offline. El código **nunca sale del navegador**.
 
+### Vulnerabilidades online
+
+Si está activada la opción *Consultar vulnerabilidades online* (viene activada), la versión instalada de cada librería de `package.json` se consulta en la **[GitHub Advisory Database](https://github.com/advisories)** a través de la API de auditoría de npm (la misma que usa `npm audit`). Se muestran todas las vulnerabilidades conocidas de esa versión, con severidad, puntaje CVSS, enlace al aviso y versión que la corrige.
+
+- Sólo se envían **nombres y versiones** de las librerías de terceros; nunca el código. Las librerías propias y las instaladas desde git no se consultan.
+- La API de npm no admite llamadas directas desde el navegador (CORS), por eso el servidor de Vite (`npm run dev`, `vite preview` o `inicio.ps1`) hace de intermediario en `/api/npm-advisories`. Si la app se publica como sitio estático sin ese intermediario, o no hay internet, se usa automáticamente la base offline y el reporte lo indica.
+- Desde la línea de comandos: `npm run analyze -- ../mi-proyecto --online`.
+
 ## Uso
 
 ### Windows (recomendado)
@@ -54,7 +62,7 @@ Una librería es **propia** si: se declara con `workspace:`/`link:`/`file:`, es 
 ## Limitaciones
 
 - El análisis es heurístico: puede haber falsos positivos/negativos.
-- La base de vulnerabilidades (`src/analyzer/data/vulnerabilities.js`) es **offline y acotada** a los casos más notorios; complementala con `npm audit` u OSV.
+- Sin consulta online, la base de vulnerabilidades (`src/analyzer/data/vulnerabilities.js`) es **offline y acotada** a los casos más notorios. Las dependencias transitivas (del lockfile) se revisan sólo contra esa base offline.
 - Se leen archivos de hasta 1 MB y se omiten los `.min.js`.
 
 ## Estructura
@@ -66,6 +74,7 @@ src/analyzer/          # motor de análisis (JS puro, corre en navegador y Node)
   security.js          # reglas de seguridad
   usage.js             # uso general / estructura Next.js
   lockfile.js          # npm / pnpm / yarn lockfiles
+  online.js            # consulta a la GitHub Advisory Database
   data/                # bases de conocimiento (librerías, IA, CVEs)
 src/components/        # UI del reporte
 src/lib/               # lectura de carpeta + Web Worker

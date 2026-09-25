@@ -1,8 +1,10 @@
 // Análisis estático de seguridad por reglas (sin IA).
+import semver from 'semver'
 import { basename, isCodeFile, lineOf, maskStringsAndComments, snippetAt } from './files.js'
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info']
 export const SEVERITY_LABELS = { critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja', info: 'Info' }
+const SEVERITY_PLURALS = { critical: 'críticas', high: 'altas', medium: 'medias', low: 'bajas', info: 'info' }
 const SEVERITY_WEIGHT = { critical: 25, high: 10, medium: 4, low: 1, info: 0 }
 
 // ── Secretos hardcodeados ────────────────────────────────────────────────────
@@ -358,16 +360,30 @@ export function analyzeSecurity(files, deps, usage) {
 
   // ── Dependencias ───────────────────────────────────────────────────────────
   for (const lib of deps.libraries) {
-    for (const v of lib.vulnerabilities) {
+    if (lib.vulnerabilities.length) {
+      // Un hallazgo por librería (algunas, como next, pueden tener decenas de avisos)
+      const vulns = [...lib.vulnerabilities].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || (b.score ?? 0) - (a.score ?? 0))
+      const worst = vulns[0]
+      const bySeverity = SEVERITIES.map((s) => [s, vulns.filter((v) => v.severity === s).length]).filter(([, n]) => n)
+      const fixes = vulns.map((v) => v.fixVersion).filter((f) => f && semver.valid(f))
+      const fixAll = fixes.length ? fixes.sort(semver.rcompare)[0] : null
+      const estimated = lib.versionSource === 'rango' ? ` Versión estimada desde el rango de package.json (${deps.lockfile ? 'no figura en el lockfile' : 'no hay lockfile'}).` : ''
       findings.push({
         id: 'vulnerable-dependency',
-        severity: v.severity,
-        title: `${lib.name}@${lib.version}: ${v.title}`,
-        description: `${v.id}. ${v.fix}${lib.versionSource === 'rango' ? ' (Versión estimada desde el rango de package.json; no se encontró lockfile.)' : ''}`,
+        severity: worst.severity,
+        title:
+          vulns.length === 1
+            ? `${lib.name}@${lib.version}: ${worst.title}`
+            : `${lib.name}@${lib.version}: ${vulns.length} vulnerabilidades conocidas (${bySeverity.map(([s, n]) => `${n} ${n === 1 ? SEVERITY_LABELS[s].toLowerCase() : SEVERITY_PLURALS[s]}`).join(', ')})`,
+        description:
+          (vulns.length === 1 ? `${worst.id}. ${worst.fix}` : fixAll ? `Actualizar a ${fixAll} o superior corrige todas las que tienen parche.` : `La más grave: ${worst.title} (${worst.id}). ${worst.fix}`) +
+          estimated +
+          (lib.vulnSource === 'online' ? ' Fuente: GitHub Advisory Database (consulta online).' : ' Fuente: base offline.'),
         file: lib.declaredIn[0] ?? 'package.json',
         line: null,
         snippet: `"${lib.name}": "${lib.spec}"`,
-        cve: v.id,
+        cve: worst.id,
+        advisories: vulns.map((v) => ({ id: v.id, title: v.title, severity: v.severity, url: v.url, fixVersion: v.fixVersion, score: v.score ?? null })),
       })
     }
     if (lib.deprecated) {
@@ -501,7 +517,7 @@ export function analyzeSecurity(files, deps, usage) {
 
     // Middleware + versión vulnerable a CVE-2025-29927
     const nextLib = deps.libraries.find((l) => l.name === 'next')
-    if (usage.next.middleware && nextLib?.vulnerabilities.some((v) => v.id === 'CVE-2025-29927')) {
+    if (usage.next.middleware && nextLib?.vulnerabilities.some((v) => /CVE-2025-29927|GHSA-f82v-jwr5-mffw/.test(v.id) || /middleware/i.test(v.title) && /bypass/i.test(v.title))) {
       findings.push({
         id: 'middleware-bypass-exposed',
         severity: 'critical',

@@ -15,6 +15,15 @@ export function toMarkdown(r) {
   for (const h of r.highlights) L.push(`- ${h.text}`)
   L.push('')
   L.push(`**Puntaje de seguridad:** ${r.security.score}/100 (${r.security.grade})`)
+  const vc = r.meta.vulnCheck ?? { mode: 'offline' }
+  L.push('')
+  L.push(
+    vc.status === 'ok'
+      ? `_Vulnerabilidades consultadas online en ${vc.source} (${new Date(vc.checkedAt).toLocaleString('es-AR')})._`
+      : vc.status === 'error'
+        ? `_No se pudo consultar online (${vc.error}); se usó la base offline._`
+        : '_Vulnerabilidades según la base offline incluida._',
+  )
   L.push('')
 
   L.push('## Librerías')
@@ -22,7 +31,7 @@ export function toMarkdown(r) {
   L.push('| Librería | Versión | Tipo | Propia/Ajena | Categoría | Imports | Vulnerabilidades |')
   L.push('|---|---|---|---|---|---|---|')
   for (const l of d.libraries) {
-    L.push(`| ${esc(l.name)} | ${esc(l.version ?? l.spec)} | ${l.type} | ${l.ownership} | ${esc(l.categoryLabel)} | ${l.importCount} | ${l.vulnerabilities.map((v) => v.id).join(', ') || '—'} |`)
+    L.push(`| ${esc(l.name)} | ${esc(l.version ?? l.spec)} | ${l.type} | ${l.ownership} | ${esc(l.categoryLabel)} | ${l.importCount} | ${l.vulnerabilities.length ? `${l.vulnerabilities.length} (${l.vulnSource})` : '—'} |`)
   }
   if (d.undeclared.length) {
     L.push('')
@@ -43,6 +52,9 @@ export function toMarkdown(r) {
   for (const f of r.security.findings) {
     L.push(`- **[${SEVERITY_LABELS[f.severity]}] ${esc(f.title)}** — \`${f.file}${f.line ? ':' + f.line : ''}\`  `)
     L.push(`  ${esc(f.description)}`)
+    for (const a of f.advisories ?? []) {
+      L.push(`  - [${SEVERITY_LABELS[a.severity]}] [${a.id}](${a.url ?? ''}) ${esc(a.title)}${a.fixVersion ? ` — corregido en ${a.fixVersion}` : ''}`)
+    }
   }
   L.push('')
 

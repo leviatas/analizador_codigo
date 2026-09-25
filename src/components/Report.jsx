@@ -48,9 +48,9 @@ export default function Report({ report }) {
       </nav>
 
       {tab === 'summary' && <Summary report={report} go={setTab} />}
-      {tab === 'libraries' && <LibrariesTab deps={d} />}
+      {tab === 'libraries' && <LibrariesTab deps={d} vulnCheck={meta.vulnCheck} />}
       {tab === 'ai' && <AITab ai={ai} />}
-      {tab === 'security' && <SecurityTab security={s} />}
+      {tab === 'security' && <SecurityTab security={s} vulnCheck={meta.vulnCheck} />}
       {tab === 'usage' && <UsageTab usage={u} deps={d} />}
     </main>
   )

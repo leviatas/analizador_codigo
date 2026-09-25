@@ -8,15 +8,17 @@ import {
   supportsDirectoryPicker,
 } from './lib/loadProject.js'
 import { toMarkdown } from './analyzer/report.js'
+import { BROWSER_ADVISORIES_PATH, runOnlineCheck } from './analyzer/online.js'
 import Report from './components/Report.jsx'
 
 export default function App() {
-  const [status, setStatus] = useState('idle') // idle | reading | analyzing | done | error
+  const [status, setStatus] = useState('idle') // idle | reading | analyzing | checking | done | error
   const [progress, setProgress] = useState({ count: 0, path: '' })
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
   const [scopes, setScopes] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [online, setOnline] = useState(true)
   const inputRef = useRef(null)
 
   const onProgress = (count, path) => {
@@ -32,7 +34,14 @@ export default function App() {
       if (!files.length) throw new Error('La carpeta no contiene archivos de código legibles.')
       setStatus('analyzing')
       const ownScopes = scopes.split(/[\s,]+/).filter(Boolean)
-      const result = await runAnalysis(files, { projectName: name, skipped, ownScopes })
+      const options = { projectName: name, skipped, ownScopes }
+      let result = await runAnalysis(files, options)
+      if (online) {
+        // Se envían sólo nombres y versiones de paquetes al servicio de vulnerabilidades
+        setStatus('checking')
+        const check = await runOnlineCheck(result.dependencies.libraries, { endpoint: BROWSER_ADVISORIES_PATH })
+        result = await runAnalysis(files, { ...options, ...check })
+      }
       setReport(result)
       setStatus('done')
     } catch (err) {
@@ -65,7 +74,7 @@ export default function App() {
     setStatus('idle')
   }
 
-  const busy = status === 'reading' || status === 'analyzing'
+  const busy = ['reading', 'analyzing', 'checking'].includes(status)
 
   return (
     <div className="app">
@@ -120,7 +129,9 @@ export default function App() {
             {busy ? (
               <div className="loading">
                 <div className="spinner" />
-                <strong>{status === 'reading' ? 'Leyendo archivos…' : 'Analizando…'}</strong>
+                <strong>
+                  {status === 'reading' ? 'Leyendo archivos…' : status === 'checking' ? 'Consultando vulnerabilidades en la GitHub Advisory Database…' : 'Analizando…'}
+                </strong>
                 {status === 'reading' && (
                   <span className="muted mono">
                     {progress.count} archivos · {progress.path}
@@ -147,6 +158,13 @@ export default function App() {
                   />
                   <small className="muted">Los paquetes de estos scopes se cuentan como librerías propias.</small>
                 </label>
+                <label className="check">
+                  <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} />
+                  <span>
+                    Consultar vulnerabilidades online (GitHub Advisory Database)
+                    <small className="muted">Sólo se envían nombres y versiones de las librerías, nunca tu código.</small>
+                  </span>
+                </label>
               </>
             )}
           </div>
@@ -156,11 +174,11 @@ export default function App() {
           <section className="features">
             <Feature title="Librerías" text="Qué usa, versiones, si son propias o de terceros, cuáles no se usan y cuáles faltan declarar." />
             <Feature title="Inteligencia Artificial" text="Detecta SDKs (OpenAI, Anthropic, Gemini, Vercel AI…), llamadas a APIs y nombres de modelos." />
-            <Feature title="Seguridad" text="Secretos expuestos, .env sin ignorar, XSS, inyecciones, CVEs conocidos y configuración de Next.js." />
+            <Feature title="Seguridad" text="Secretos expuestos, .env sin ignorar, XSS, inyecciones, configuración de Next.js y vulnerabilidades de cada librería consultadas online." />
             <Feature title="Uso general" text="Rutas, endpoints, componentes cliente/servidor, hooks, estilos, TypeScript y métricas." />
           </section>
           <p className="privacy muted">
-            Todo corre en tu navegador: el código nunca sale de tu máquina. Se ignoran <code>node_modules</code>, <code>.next</code>, <code>.git</code> y carpetas de build.
+            El análisis corre en tu navegador: el código nunca sale de tu máquina (la consulta online sólo envía nombres y versiones de librerías). Se ignoran <code>node_modules</code>, <code>.next</code>, <code>.git</code> y carpetas de build.
           </p>
         </main>
       )}

@@ -6,6 +6,7 @@ import { CATEGORIES, lookupByPattern, lookupLibrary } from './data/libraries.js'
 import { AI_PACKAGES } from './data/ai.js'
 import { DEPRECATED_PACKAGES, VULNERABILITIES } from './data/vulnerabilities.js'
 import { parseLockfiles } from './lockfile.js'
+import { fixVersionFor } from './online.js'
 
 const DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 
@@ -45,10 +46,26 @@ export function resolveVersion(name, spec, lock) {
 
 export function findVulnerabilities(name, version) {
   if (!version || !semver.valid(version)) return []
-  return VULNERABILITIES.filter((v) => v.pkg === name && semver.satisfies(version, v.range, { includePrerelease: true }))
+  return VULNERABILITIES.filter((v) => v.pkg === name && semver.satisfies(version, v.range, { includePrerelease: true })).map((v) => ({
+    ...v,
+    url: advisoryUrl(v.id),
+    fixVersion: fixVersionFor(v.range, version),
+    source: 'offline',
+  }))
 }
 
-export function analyzeDependencies(files, { ownScopes = [], aliases = [] } = {}) {
+function advisoryUrl(id) {
+  const ghsa = id.match(/GHSA-[\w-]+/)?.[0]
+  if (ghsa) return `https://github.com/advisories/${ghsa}`
+  const cve = id.match(/CVE-\d{4}-\d+/)?.[0]
+  return cve ? `https://nvd.nist.gov/vuln/detail/${cve}` : null
+}
+
+/**
+ * @param onlineAdvisories  { 'nombre@versión': [advisories] } obtenido de online.js; si una librería
+ *                          está presente, sus vulnerabilidades salen de ahí en lugar de la base offline.
+ */
+export function analyzeDependencies(files, { ownScopes = [], aliases = [], onlineAdvisories = null } = {}) {
   const pkgs = readPackageJsons(files)
   const root = pkgs[0]?.json ?? null
   const lock = parseLockfiles(files)
@@ -151,7 +168,9 @@ export function analyzeDependencies(files, { ownScopes = [], aliases = [] } = {}
     }
 
     const { version, source } = resolveVersion(lib.name, lib.spec, lock)
-    const vulnerabilities = findVulnerabilities(lib.name, version)
+    const onlineKey = `${lib.name}@${version}`
+    const checkedOnline = Boolean(onlineAdvisories && version && Object.hasOwn(onlineAdvisories, onlineKey))
+    const vulnerabilities = checkedOnline ? onlineAdvisories[onlineKey] : findVulnerabilities(lib.name, version)
     const category = ai ? 'ai' : info?.category ?? 'other'
 
     const implicitlyUsed =
@@ -184,6 +203,7 @@ export function analyzeDependencies(files, { ownScopes = [], aliases = [] } = {}
       possiblyUnused: !implicitlyUsed && lib.type === 'dependencies',
       deprecated: DEPRECATED_PACKAGES[lib.name] ?? null,
       vulnerabilities,
+      vulnSource: checkedOnline ? 'online' : 'offline',
     }
   })
 

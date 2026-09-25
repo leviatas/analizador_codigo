@@ -8,6 +8,7 @@ import { appRouteFromPath } from '../src/analyzer/usage.js'
 import { parseLockfiles } from '../src/analyzer/lockfile.js'
 import { stripComments } from '../src/analyzer/files.js'
 import { loadFromDisk } from '../scripts/analyze-cli.js'
+import { fetchAdvisories, fixVersionFor, runOnlineCheck } from '../src/analyzer/online.js'
 
 const fixture = fileURLToPath(new URL('./fixtures/next-app', import.meta.url))
 const { files } = loadFromDisk(fixture)
@@ -132,5 +133,57 @@ describe('falsos positivos', () => {
       { path: 'examples/app/package.json', content: JSON.stringify({ dependencies: { next: '15.0.0' } }) },
     ])
     expect(r.usage.projectType).toBe('React + Vite')
+  })
+})
+
+describe('consulta online de vulnerabilidades', () => {
+  const fakeResponse = {
+    next: [
+      { id: 1, url: 'https://github.com/advisories/GHSA-f82v-jwr5-mffw', title: 'Authorization Bypass in Next.js Middleware', severity: 'critical', vulnerable_versions: '>=15.0.0 <15.2.3', cvss: { score: 9.1 } },
+      { id: 2, url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc', title: 'Otra de next', severity: 'moderate', vulnerable_versions: '>=16.0.0 <16.0.1' },
+    ],
+    lodash: [{ id: 3, url: 'https://github.com/advisories/GHSA-35jh-r3h4-6jhm', title: 'Command Injection in lodash', severity: 'high', vulnerable_versions: '<4.17.21' }],
+  }
+  const fakeFetch = async (url, init) => {
+    fakeFetch.calls.push({ url, body: JSON.parse(init.body) })
+    return { ok: true, json: async () => fakeResponse }
+  }
+  fakeFetch.calls = []
+
+  it('calcula la versión que corrige', () => {
+    expect(fixVersionFor('>=13.0.0 <13.5.9 || >=15.0.0 <15.2.3', '15.1.0')).toBe('15.2.3')
+    expect(fixVersionFor('<=4.4.4', '4.0.0')).toBe('> 4.4.4')
+    expect(fixVersionFor('*', '1.0.0')).toBe(null)
+  })
+
+  it('envía sólo nombres y versiones de librerías ajenas y filtra por versión', async () => {
+    const result = await fetchAdvisories(report.dependencies.libraries, { fetchImpl: fakeFetch })
+    const sent = fakeFetch.calls[0].body
+    expect(sent.next).toEqual(['15.1.0'])
+    expect(sent['@acme/ui']).toBeUndefined() // propia: no se consulta
+    expect(sent['my-fork']).toBeUndefined() // git: no está en npm
+    expect(result['next@15.1.0'].map((a) => a.id)).toEqual(['GHSA-f82v-jwr5-mffw']) // la de 16.x se descarta
+    expect(result['next@15.1.0'][0]).toMatchObject({ severity: 'critical', fixVersion: '15.2.3', score: 9.1 })
+    expect(result['lodash@4.17.15'][0].severity).toBe('high')
+    expect(result['react@19.0.0']).toEqual([])
+  })
+
+  it('usa los resultados online en el reporte', async () => {
+    const check = await runOnlineCheck(report.dependencies.libraries, { fetchImpl: fakeFetch })
+    const r = analyzeProject(files, check)
+    const next = r.dependencies.libraries.find((l) => l.name === 'next')
+    expect(next.vulnSource).toBe('online')
+    expect(next.vulnerabilities.map((v) => v.id)).toEqual(['GHSA-f82v-jwr5-mffw'])
+    expect(r.dependencies.libraries.find((l) => l.name === 'react').vulnerabilities).toEqual([])
+    expect(r.meta.vulnCheck.status).toBe('ok')
+    expect(r.security.findings.map((f) => f.id)).toContain('middleware-bypass-exposed')
+  })
+
+  it('si el servicio falla, sigue con la base offline', async () => {
+    const check = await runOnlineCheck(report.dependencies.libraries, { fetchImpl: async () => ({ ok: false, status: 503 }) })
+    expect(check.vulnCheck).toMatchObject({ status: 'error', mode: 'offline' })
+    const r = analyzeProject(files, check)
+    expect(r.dependencies.libraries.find((l) => l.name === 'next').vulnSource).toBe('offline')
+    expect(r.dependencies.libraries.find((l) => l.name === 'next').vulnerabilities.length).toBeGreaterThan(0)
   })
 })
