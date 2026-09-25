@@ -11,6 +11,23 @@ Aplicación **React + Vite** que analiza un proyecto React o Next.js a partir de
 
 ## Uso
 
+### Windows (recomendado)
+
+Doble clic en **`inicio.cmd`**, o desde PowerShell:
+
+```powershell
+.\inicio.ps1                 # instala las librerías, levanta la web y la abre en el navegador
+.\inicio.ps1 -Puerto 3000    # otro puerto (si está ocupado busca el siguiente libre)
+.\inicio.ps1 -NoAbrir        # no abre el navegador
+.\inicio.ps1 -Produccion     # compila y sirve la versión optimizada
+.\inicio.ps1 -Reinstalar     # fuerza la reinstalación de librerías
+```
+
+El script verifica Node.js (20.19+), corre `npm install` sólo si hace falta y muestra la dirección de la web (por defecto `http://localhost:5173/`).
+Si PowerShell bloquea el script, usá `inicio.cmd` o `powershell -ExecutionPolicy Bypass -File .\inicio.ps1`.
+
+### Manual
+
 ```bash
 npm install
 npm run dev        # abre http://localhost:5173
